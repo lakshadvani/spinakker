@@ -6,76 +6,50 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 class SimpleTextClustering:
     def __init__(self, input_df, text_column="short_description"):
-        """
-        Initialize text clustering pipeline with exact hyperparameters.
-        :param input_df: DataFrame containing text data.
-        :param text_column: Column to cluster (default: 'short_description').
-        """
         self.df = input_df.copy()
         self.text_column = text_column
-
-        # Embedding model (exact as seen in your code)
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
-
-        # UMAP hyperparameters (exact match from your code)
         self.umap_model = umap.UMAP(
-            n_neighbors=10,      # Defined in your original class
-            n_components=100,    # Matches your hyperparameter
-            min_dist=0.0,        # Exact from your code
-            metric="cosine",     # Your original metric
-            random_state=42      # Ensures reproducibility
+            n_neighbors=10, 
+            n_components=100, 
+            min_dist=0.0, 
+            metric="cosine", 
+            random_state=42
         )
-
-        # HDBSCAN clustering (exact parameters from your original code)
         self.clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=10,   # From your original class
-            min_samples=1,         # Matches your code
-            metric="euclidean",    # Same distance metric
-            cluster_selection_method="eom",  # Same as yours
-            prediction_data=True    # For `predict` function support
+            min_cluster_size=10, 
+            min_samples=1, 
+            metric="euclidean", 
+            cluster_selection_method="eom", 
+            prediction_data=True
         )
-
-        # CountVectorizer hyperparameters (exact from your code)
         self.vectorizer = CountVectorizer(
-            stop_words="english",
-            ngram_range=(1, 2),  # Same as your original code
-            min_df=1             # Same threshold
+            stop_words="english", 
+            ngram_range=(1, 2), 
+            min_df=1
         )
 
     def encode_texts(self, texts):
-        """Convert texts to embeddings using SentenceTransformer."""
         return self.model.encode(texts, convert_to_numpy=True)
 
     def fit(self):
-        """Runs the full pipeline: encoding, dimensionality reduction, and clustering."""
-        # Step 1: Get text data
         self.df[self.text_column] = self.df[self.text_column].fillna("")
         texts = self.df[self.text_column].tolist()
-
-        # Step 2: Generate embeddings
         embeddings = self.encode_texts(texts)
-
-        # Step 3: Reduce dimensionality with UMAP
         reduced_embeddings = self.umap_model.fit_transform(embeddings)
-
-        # Step 4: Cluster using HDBSCAN
         labels = self.clusterer.fit_predict(reduced_embeddings)
-
-        # Step 5: Store results
         self.df["Cluster"] = labels
         return self.df
 
     def predict(self, new_texts):
-        """Predict cluster for new texts using the trained model."""
         if isinstance(new_texts, str):
             new_texts = [new_texts]
         embeddings = self.encode_texts(new_texts)
         reduced_embeddings = self.umap_model.transform(embeddings)
         return self.clusterer.approximate_predict(reduced_embeddings)
 
-# Example Usage:
-df = pd.read_csv("incident_gaf1_100k.csv", encoding="latin1")  # Load dataset
-clustering_model = SimpleTextClustering(df)  # Initialize model
-clustered_df = clustering_model.fit()  # Run clustering
+df = pd.read_csv("incident_gaf1_100k.csv", encoding="latin1")
+clustering_model = SimpleTextClustering(df)
+clustered_df = clustering_model.fit()
 import ace_tools as tools
 tools.display_dataframe_to_user(name="Clustered Data", dataframe=clustered_df)
