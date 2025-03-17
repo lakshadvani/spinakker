@@ -1,0 +1,124 @@
+import numpy as np
+import pandas as pd
+import umap
+import hdbscan
+import faiss
+from tqdm import tqdm
+from sklearn.feature_extraction.text import CountVectorizer
+from sentence_transformers import SentenceTransformer
+
+# Load the SentenceTransformer model (CPU-only)
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+# Load large text dataset (Example: 100K texts)
+texts = ["Sample text {}".format(i) for i in range(100000)]  # Replace with actual dataset
+
+# 1️⃣ **Batch Processing for Encoding** (Prevents memory overload)
+def encode_texts_in_batches(texts, batch_size=512):
+    """
+    Encodes texts in batches to prevent memory overload.
+    """
+    embeddings = []
+    for i in tqdm(range(0, len(texts), batch_size), desc="Encoding Texts"):
+        batch = texts[i:i + batch_size]
+        batch_embeddings = model.encode(batch, convert_to_numpy=True)  # Convert to numpy for better performance
+        embeddings.append(batch_embeddings)
+    return np.vstack(embeddings)
+
+# Generate embeddings for all texts
+embeddings = encode_texts_in_batches(texts)
+
+# 2️⃣ **Use FAISS for Faster Nearest Neighbor Search in UMAP**
+def umap_with_faiss(embeddings, n_neighbors=15, n_components=2):
+    """
+    Uses FAISS to speed up nearest neighbor search for UMAP.
+    """
+    index = faiss.IndexFlatL2(embeddings.shape[1])  # FAISS L2 index
+    index.add(embeddings)  # Add embeddings to the FAISS index
+    _, neighbors = index.search(embeddings, n_neighbors)  # Find nearest neighbors
+
+    reducer = umap.UMAP(
+        n_components=n_components,
+        metric="cosine",
+        random_state=42,
+        n_neighbors=n_neighbors
+    )
+    reduced_embeddings = reducer.fit_transform(embeddings, neighbors=neighbors)  # Use FAISS neighbors
+    return reduced_embeddings
+
+# Reduce dimensionality with UMAP + FAISS
+reduced_embeddings = umap_with_faiss(embeddings)
+
+# 3️⃣ **Optimized HDBSCAN with Multiple CPU Cores**
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=10,  # Adjust based on dataset
+    min_samples=1,
+    metric="euclidean",
+    core_dist_n_jobs=-1  # Enables parallel processing
+)
+
+# Run HDBSCAN clustering
+labels = clusterer.fit_predict(reduced_embeddings)
+
+# 4️⃣ **Create a DataFrame for better visualization**
+df = pd.DataFrame({"Text": texts, "Cluster": labels})
+
+# Display results
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Optimized Text Clustering Results", dataframe=df)
+
+
+
+
+
+
+
+
+
+
+old:
+
+import numpy as np
+import pandas as pd
+import umap
+import hdbscan
+from sklearn.feature_extraction.text import CountVectorizer
+from sentence_transformers import SentenceTransformer
+import matplotlib.pyplot as plt
+
+# Sample text data
+texts = [
+    "Machine learning is amazing",
+    "Deep learning is a subset of ML",
+    "Artificial Intelligence is evolving",
+    "Cats are great pets",
+    "Dogs are friendly animals",
+    "AI can drive cars",
+    "Felines are agile and smart",
+]
+
+# Load the embedding model
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+# Convert text to embeddings
+embeddings = model.encode(texts, show_progress_bar=True)
+
+# Reduce dimensionality with UMAP
+umap_model = umap.UMAP(n_components=2, metric='cosine', random_state=42)
+reduced_embeddings = umap_model.fit_transform(embeddings)
+
+# Cluster with HDBSCAN
+clusterer = hdbscan.HDBSCAN(min_cluster_size=2, min_samples=1, metric='euclidean')
+labels = clusterer.fit_predict(reduced_embeddings)
+
+# Visualize clustering
+plt.figure(figsize=(8, 6))
+scatter = plt.scatter(reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=labels, cmap='viridis', s=50)
+plt.colorbar(scatter, label="Cluster Labels")
+plt.title("Text Clustering using UMAP + HDBSCAN")
+plt.show()
+
+# Create a DataFrame for better visualization
+df = pd.DataFrame({"Text": texts, "Cluster": labels})
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Text Clustering Results", dataframe=df)
