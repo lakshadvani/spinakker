@@ -5,20 +5,19 @@ import hdbscan
 import faiss
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
-from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.cluster import KMeans
 
-class HighAccuracyHDBSCANClustering:
+class StableHDBSCANClustering:
     def __init__(self, input_df, text_column="short_description"):
         self.df = input_df.copy()
         self.text_column = text_column
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")  # Keeping the original model
+        self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
         self.umap_model = umap.UMAP(
-            n_neighbors=50,  # Higher neighbors for better accuracy
-            n_components=50, 
-            min_dist=0.0, 
-            metric="cosine", 
+            n_neighbors=15,   # Reduced from 50 to prevent memory overload
+            n_components=5,   # Reduced from 50 to speed up clustering
+            min_dist=0.0,
+            metric="cosine",
             random_state=42,
             low_memory=True
         )
@@ -29,14 +28,13 @@ class HighAccuracyHDBSCANClustering:
             metric="euclidean",
             cluster_selection_method="eom",
             prediction_data=True,
-            core_dist_n_jobs=-1,
-            probability=True  # Enables soft clustering
+            core_dist_n_jobs=4,  # Limited to 4 cores to prevent CPU freezing
+            probability=True
         )
 
-        self.vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1)
-        self.kmeans = KMeans(n_clusters=50, n_init="auto")  # For refining unclustered points
+        self.kmeans = KMeans(n_clusters=50, n_init="auto")  # Handles unclustered points
 
-    def encode_texts(self, texts, batch_size=512):
+    def encode_texts(self, texts, batch_size=256):  # Smaller batch size prevents memory overload
         embeddings = []
         for i in tqdm(range(0, len(texts), batch_size), desc="Encoding Texts"):
             batch = texts[i:i + batch_size]
@@ -47,7 +45,7 @@ class HighAccuracyHDBSCANClustering:
     def fast_umap(self, embeddings):
         index = faiss.IndexFlatL2(embeddings.shape[1])
         index.add(embeddings)
-        _, neighbors = index.search(embeddings, 50)  # More neighbors = better local structure
+        _, neighbors = index.search(embeddings, 15)  # Keeping n_neighbors=15 for stability
         return self.umap_model.fit_transform(embeddings, neighbors=neighbors)
 
     def fit(self):
@@ -73,5 +71,5 @@ class HighAccuracyHDBSCANClustering:
         return self.df
 
 df = pd.read_csv("incident_gaf1_100k.csv", encoding="latin1")
-clustering_model = HighAccuracyHDBSCANClustering(df)
+clustering_model = StableHDBSCANClustering(df)
 clustered_df = clustering_model.fit()
