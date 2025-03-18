@@ -35,10 +35,12 @@ else:
     reduced_embeddings = reducer.fit_transform(embeddings)
 
     # Run HDBSCAN Clustering
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=10, min_samples=1, metric="euclidean", cluster_selection_method="eom", prediction_data=True, core_dist_n_jobs=2, probability=True)
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=10, min_samples=1, metric="euclidean", cluster_selection_method="eom", core_dist_n_jobs=2)
     labels = clusterer.fit_predict(reduced_embeddings)
-    cluster_probs = clusterer.probabilities_
+
+    # Get Cluster Probabilities (Soft Clustering)
+    cluster_probs = clusterer.membership_vector_ if hasattr(clusterer, "membership_vector_") else np.zeros(len(labels))
 
     # Store Results
     df["Cluster"] = labels
-    df["Cluster Confidence"] = cluster_probs
+    df["Cluster Confidence"] = [max(p) if len(p) > 0 else 0 for p in cluster_probs]
