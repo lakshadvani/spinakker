@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import umap
 import hdbscan
+import faiss
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 
@@ -30,12 +31,23 @@ embeddings = np.vstack(embeddings) if embeddings else np.array([])
 if embeddings.shape[0] == 0:
     print("Embedding generation failed. Exiting clustering.")
 else:
+    # Use FAISS for Faster Nearest Neighbor Search in UMAP
+    index = faiss.IndexFlatL2(embeddings.shape[1])  # Create FAISS L2 index
+    index.add(embeddings)  # Add embeddings to FAISS index
+    _, neighbors = index.search(embeddings, 10)  # Find top 10 nearest neighbors
+
     # Reduce Dimensionality with UMAP
-    reducer = umap.UMAP(n_neighbors=10, n_components=2, min_dist=0.0, metric="cosine", random_state=42, low_memory=True)
-    reduced_embeddings = reducer.fit_transform(embeddings)
+    reducer = umap.UMAP(
+        n_neighbors=10, n_components=2, min_dist=0.0, metric="cosine", 
+        random_state=42, low_memory=True
+    )
+    reduced_embeddings = reducer.fit_transform(embeddings, neighbors=neighbors)
 
     # Run HDBSCAN Clustering
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=10, min_samples=1, metric="euclidean", cluster_selection_method="eom", core_dist_n_jobs=2)
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=10, min_samples=1, metric="euclidean", 
+        cluster_selection_method="eom", core_dist_n_jobs=2
+    )
     labels = clusterer.fit_predict(reduced_embeddings)
 
     # Get Cluster Probabilities (Soft Clustering)
