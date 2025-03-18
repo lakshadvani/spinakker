@@ -5,7 +5,6 @@ import hdbscan
 import faiss
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
 
 class StableHDBSCANClustering:
     def __init__(self, input_df, text_column="short_description"):
@@ -14,8 +13,8 @@ class StableHDBSCANClustering:
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
         self.umap_model = umap.UMAP(
-            n_neighbors=15,   # Reduced from 50 to prevent memory overload
-            n_components=5,   # Reduced from 50 to speed up clustering
+            n_neighbors=15,   # Keeps balance between speed & accuracy
+            n_components=5,   # Lower dimensionality for faster clustering
             min_dist=0.0,
             metric="cosine",
             random_state=42,
@@ -28,13 +27,11 @@ class StableHDBSCANClustering:
             metric="euclidean",
             cluster_selection_method="eom",
             prediction_data=True,
-            core_dist_n_jobs=4,  # Limited to 4 cores to prevent CPU freezing
+            core_dist_n_jobs=4,  # Limits parallel CPU usage to prevent crashing
             probability=True
         )
 
-        self.kmeans = KMeans(n_clusters=50, n_init="auto")  # Handles unclustered points
-
-    def encode_texts(self, texts, batch_size=256):  # Smaller batch size prevents memory overload
+    def encode_texts(self, texts, batch_size=256):  # Lower batch size prevents memory overload
         embeddings = []
         for i in tqdm(range(0, len(texts), batch_size), desc="Encoding Texts"):
             batch = texts[i:i + batch_size]
@@ -45,7 +42,7 @@ class StableHDBSCANClustering:
     def fast_umap(self, embeddings):
         index = faiss.IndexFlatL2(embeddings.shape[1])
         index.add(embeddings)
-        _, neighbors = index.search(embeddings, 15)  # Keeping n_neighbors=15 for stability
+        _, neighbors = index.search(embeddings, 15)  # Lowered for stability
         return self.umap_model.fit_transform(embeddings, neighbors=neighbors)
 
     def fit(self):
@@ -57,13 +54,6 @@ class StableHDBSCANClustering:
 
         hdbscan_labels = self.clusterer.fit_predict(reduced_embeddings)
         cluster_probs = self.clusterer.probabilities_
-
-        outliers = np.where(hdbscan_labels == -1)[0]
-        if len(outliers) > 0:
-            outlier_embeddings = reduced_embeddings[outliers]
-            outlier_labels = self.kmeans.fit_predict(outlier_embeddings)
-            for i, idx in enumerate(outliers):
-                hdbscan_labels[idx] = outlier_labels[i] + max(hdbscan_labels) + 1
 
         self.df["Cluster"] = hdbscan_labels
         self.df["Cluster Confidence"] = cluster_probs
